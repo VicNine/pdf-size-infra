@@ -1,0 +1,162 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: My API Gateway and Lambda function
+
+Parameters:
+  apiGatewayName:
+    Type: String
+    Default: pdf-size-restapp-api
+  apiGatewayKeyName:
+    Type: String
+    Default: pdf-size-restapp-api-key
+  apiGatewayStageName:
+    Type: String
+    AllowedPattern: '[a-z0-9]+'
+    Default: dev
+  apiGatewayHTTPMethod:
+    Type: String
+    Default: POST
+  lambdaFunctionName:
+    Type: String
+    AllowedPattern: '[a-zA-Z0-9]+[a-zA-Z0-9-]+[a-zA-Z0-9]+'
+    Default: get-pdf-size
+
+Resources:
+  PDFS3Bucket:
+    Type: AWS::S3::Bucket
+
+  apiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Description: Example API Gateway
+      EndpointConfiguration:
+        Types:
+        - REGIONAL
+      Name: !Ref apiGatewayName
+
+  apiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn:
+    - apiGatewayDeployment
+    Properties:
+      Name: !Ref apiGatewayKeyName
+      Description: API Key for api gateway
+      Enabled: true
+      StageKeys:
+      - RestApiId: !Ref apiGateway
+        StageName: !Ref apiGatewayStageName
+
+  usagePlan:
+    Type: 'AWS::ApiGateway::UsagePlan'
+    DependsOn:
+    - apiKey
+    Properties:
+      ApiStages:
+      - ApiId: !Ref apiGateway
+        Stage: !Ref apiGatewayStageName
+      Description: Usage plan for pdf size api
+      Quota:
+        Limit: 5000
+        Offset: 0
+        Period: "WEEK"
+      Throttle:
+        BurstLimit: 200
+        RateLimit: 100
+      UsagePlanName: pdf-size-restapp-usage-plan
+  usagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref apiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref usagePlan
+
+  apiGatewayRootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: true
+      AuthorizationType: NONE
+      HttpMethod: !Ref apiGatewayHTTPMethod
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub
+        - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
+        - lambdaArn: !GetAtt lambdaFunction.Arn
+      ResourceId: !GetAtt apiGateway.RootResourceId
+      RestApiId: !Ref apiGateway
+
+  apiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+    - apiGatewayRootMethod
+    Properties:
+      RestApiId: !Ref apiGateway
+      StageName: !Ref apiGatewayStageName
+
+  lambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        # place holder code, default file name is index.py
+        ZipFile: |
+          def lambda_handler(event, context):
+            print("Hello world!")
+            return {
+                'statusCode': 200,
+                'body': "Hello world!"
+            }
+      Description: Example Lambda function
+      FunctionName: !Ref lambdaFunctionName
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt lambdaIAMRole.Arn
+      Runtime: python3.11
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref PDFS3Bucket
+      MemorySize: 1024
+      EphemeralStorage:
+        Size: 1024
+
+
+
+  lambdaApiGatewayInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt lambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${apiGateway}/${apiGatewayStageName}/${apiGatewayHTTPMethod}/
+
+  lambdaIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+      Policies:
+      - PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Effect: Allow
+            Resource:
+            - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${lambdaFunctionName}:*
+          - Action:
+            - s3:PutObject
+            Effect: Allow
+            Resource: !Sub 'arn:aws:s3:::${PDFS3Bucket}/*'
+        PolicyName: lambda
+
+  lambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${lambdaFunctionName}
+      RetentionInDays: 90
