@@ -18,4 +18,5 @@ Make sure aws account configured in your local machine before running following 
 TODO
 - Stacks for provisioning VPC and security groups
 - Stacks for provisioning Code Pipeline 
+- Lambda versioning if needed
 - CICD for IaC
