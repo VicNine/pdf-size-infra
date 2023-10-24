@@ -1,8 +1,20 @@
 # pdf-size-infra
 
-run stacks
+Cloudformation stacks for provisioning
+- Api Gateway
+- S3 Bucket
+- Lambda
 
-```bash
-aws cloudformation create-stack --stack-name pdf-size-api-lambda-stack --template-body file://stacks.yml --capabilities CAPABILITY_IAM
+Make sure aws account configured in your local machine before running following commands
 
-```
+ ```bash
+# deploy stacks
+./deploy-stacks.yml
+
+# delete stacks
+./delete-stacks.yml
+``````
+
+TODO
+- add VPC and security groups
+- CICD for IaC
